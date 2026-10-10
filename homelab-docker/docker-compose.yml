@@ -1,0 +1,110 @@
+name: infra
+
+# All persistent state lives under ${DATA_DIR} on the host (set it in .env to
+# a folder on your mounted disk, e.g. /Volumes/data/infra or /mnt/data/infra).
+
+services:
+  # Creates the data folders and hands them to the UIDs the images run as.
+  init-storage:
+    image: busybox:1.37
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /data/registry /data/loki /data/tempo /data/prometheus /data/grafana
+        chown -R 10001:10001 /data/loki /data/tempo
+        chown -R 65534:65534 /data/prometheus
+        chown -R 472:0 /data/grafana
+    volumes:
+      - ${DATA_DIR:?set DATA_DIR in .env}:/data
+
+  registry:
+    image: registry:3
+    restart: unless-stopped
+    depends_on:
+      init-storage:
+        condition: service_completed_successfully
+    environment:
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+      # Prometheus metrics on the debug listener, scraped by the collector
+      REGISTRY_HTTP_DEBUG_ADDR: 0.0.0.0:5001
+      REGISTRY_HTTP_DEBUG_PROMETHEUS_ENABLED: "true"
+    ports:
+      - "${REGISTRY_PORT:-5050}:5000"
+    volumes:
+      - ${DATA_DIR}/registry:/var/lib/registry
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.128.0
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    depends_on:
+      - loki
+      - tempo
+      - prometheus
+    ports:
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    volumes:
+      - ./config/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+
+  loki:
+    image: grafana/loki:3.5.0
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/config.yaml"]
+    depends_on:
+      init-storage:
+        condition: service_completed_successfully
+    volumes:
+      - ./config/loki.yaml:/etc/loki/config.yaml:ro
+      - ${DATA_DIR}/loki:/loki
+
+  tempo:
+    image: grafana/tempo:2.8.1
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/config.yaml"]
+    depends_on:
+      init-storage:
+        condition: service_completed_successfully
+    volumes:
+      - ./config/tempo.yaml:/etc/tempo/config.yaml:ro
+      - ${DATA_DIR}/tempo:/var/tempo
+
+  prometheus:
+    image: prom/prometheus:v3.4.2
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${METRICS_RETENTION:-15d}
+      - --web.enable-otlp-receiver
+      - --web.enable-remote-write-receiver
+      - --enable-feature=exemplar-storage
+    depends_on:
+      init-storage:
+        condition: service_completed_successfully
+    volumes:
+      - ./config/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - ${DATA_DIR}/prometheus:/prometheus
+
+  grafana:
+    image: grafana/grafana:12.0.2
+    restart: unless-stopped
+    depends_on:
+      init-storage:
+        condition: service_completed_successfully
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+      prometheus:
+        condition: service_started
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./config/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - ${DATA_DIR}/grafana:/var/lib/grafana

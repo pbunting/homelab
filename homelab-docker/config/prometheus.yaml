@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 30s
+
+# Metrics arrive via OTLP (collector) and remote write (Tempo metrics generator);
+# only the stack's own components are scraped directly.
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+  - job_name: tempo
+    static_configs:
+      - targets: ["tempo:3200"]
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8888"]
+
+otlp:
+  promote_resource_attributes:
+    - service.name
+    - service.namespace
+    - service.instance.id
+    - deployment.environment.name
