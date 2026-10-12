@@ -15,6 +15,14 @@ The Virtual Machines will host a Kubernetes cluster.
 
 ## Install Notes
 
+### BuildKite
+
+```
+brew install buildkite
+```
+
+Make sure the BUILDKITE_AGENT_TOKEN environment variable is set.
+
 ### Python
 
 ```
