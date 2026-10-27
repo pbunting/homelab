@@ -46,6 +46,7 @@ services:
     ports:
       - "4317:4317" # OTLP gRPC
       - "4318:4318" # OTLP HTTP
+      - "127.0.0.1:8006:8006" # Fluent Forward (Docker fluentd log driver)
     volumes:
       - ./config/otel-collector.yaml:/etc/otelcol/config.yaml:ro
 
@@ -108,3 +109,21 @@ services:
     volumes:
       - ./config/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
       - ${DATA_DIR}/grafana:/var/lib/grafana
+
+  krakend:
+    image: krakend:2
+    restart: unless-stopped
+    command: ["run", "--config", "/etc/krakend/krakend.json"]
+    depends_on:
+      - otel-collector
+    ports:
+      - "${KRAKEND_PORT:-8080}:8080"
+    volumes:
+      - ./config/krakend:/etc/krakend:ro
+    # Ship stdout logs to the collector; the Docker daemon connects via the host port.
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: localhost:8006
+        fluentd-async: "true"
+        tag: krakend

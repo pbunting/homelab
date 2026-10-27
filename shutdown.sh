@@ -1,15 +1,14 @@
-#!/bin/bash
+#!/bin/bash -x
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Check the Buildkite agent token is set (":+set" keeps the token out of "bash -x" traces).
-[[ -n "${BUILDKITE_AGENT_TOKEN:+set}" ]] || { echo "BUILDKITE_AGENT_TOKEN is not set."; exit 1; }
-
-buildkite-agent stop
+# Stop the Buildkite agent started by setup.sh. SIGTERM lets any running job finish first.
+pkill -TERM -f "buildkite-agent start" || echo "Buildkite agent is not running."
 
 source ~/.homelab/.venv/bin/activate
 # It is expected that vman has already been installed, see README.md
 
+export KUBECONFIG_VMAN=$SCRIPT_DIR/kube.conf
 $SCRIPT_DIR/cluster-down.sh
 
 if [ $(whoami) == "root" ]; then

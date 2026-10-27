@@ -1,6 +1,12 @@
 #!/bin/bash -x
 
+# This is a bash script; if it was started as "zsh setup.sh" (or sh), restart it under bash.
+[ -n "$BASH_VERSION" ] || exec /bin/bash -x "$0" "$@"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Launchers such as Shortcuts start with a bare PATH and do not read ~/.zshrc.
+export PATH="$HOME/.rd/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 # Check the Buildkite agent token is set (":+set" keeps the token out of "bash -x" traces).
 [[ -n "${BUILDKITE_AGENT_TOKEN:+set}" ]] || { echo "BUILDKITE_AGENT_TOKEN is not set."; exit 1; }
@@ -11,8 +17,6 @@ docker info >/dev/null 2>&1 || { echo "Docker is not running. Start Docker."; ex
 source ~/.homelab/.venv/bin/activate
 # It is expected that vman has already been installed, see README.md
 
-vman config
-
 # Check VMan is available
 vman -h >/dev/null 2>&1 || { echo "vman is not installed. See README.md."; exit 1; }
 
@@ -20,11 +24,23 @@ vman -h >/dev/null 2>&1 || { echo "vman is not installed. See README.md."; exit 
 # Run the OTel stack and the BuildKite agent using Docker Compose.
 ( cd ~/.homelab; docker compose -f ${SCRIPT_DIR}/homelab-docker/docker-compose.yml up -d )
 
+# Start Ollama (if not running already)
+curl -sf http://localhost:11434/ >/dev/null 2>&1 || brew services start ollama || { echo "Failed to start ollama"; exit 1; }
+
 # Launch VMs and run Kubernetes on VMs
-if [ $(whoami) == "root" ]; then
+# vman needs root to manage the VMs; everything else runs as the current user.
+# With no terminal (e.g. run from a Shortcut) sudo cannot prompt, so have it
+# ask for the password in a dialog instead.
+SUDO="sudo"
+if ! { : </dev/tty; } 2>/dev/null; then
+    export SUDO_ASKPASS="$SCRIPT_DIR/askpass.sh"
+    SUDO="sudo -A"
+fi
+
+if [ "$(whoami)" = "root" ]; then
     VM_CMD="vman"
 else
-    VM_CMD="sudo vman"
+    VM_CMD="$SUDO vman"
 fi
 
 # "vman list" reports root-owned VMs as stopped when run unprivileged, so ask
@@ -64,7 +80,7 @@ start_vm kb0 || { echo "Failed to start kb0"; exit 1; }
 wait_for_boot 200
 $VM_CMD scp kb0 :/home/ubuntu/.kube/config $SCRIPT_DIR/kube.conf
 # Under sudo the copy is owned by root; hand it back so kubectl can read it.
-[ $(whoami) == "root" ] || sudo chown $(whoami) $SCRIPT_DIR/kube.conf
+[ "$(whoami)" = "root" ] || $SUDO chown "$(whoami)" $SCRIPT_DIR/kube.conf
 
 $VM_CMD list 2>&1 | grep -q "kb1" || KB1_BUILD=1
 if [[ "${KB1_BUILD}" ]]; then

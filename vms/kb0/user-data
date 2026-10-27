@@ -16,6 +16,13 @@ write_files:
       net.bridge.bridge-nf-call-iptables=1
       net.ipv4.conf.all.forwarding=1
       net.bridge.bridge-nf-call-ip6tables=1
+  - path: /etc/containerd/certs.d/image-repo.local:5050/hosts.toml
+    owner: root:root
+    permissions: 0o644
+    content: |
+      server = "http://image-repo.local:5050"
+      [host."http://image-repo.local:5050"]
+        capabilities = ["pull", "resolve"]
   - path: /home/ubuntu/kube-flannel.yml
     owner: ubuntu:ubuntu
     permissions: 0o600

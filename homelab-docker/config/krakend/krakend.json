@@ -1,0 +1,26 @@
+{
+  "$schema": "https://www.krakend.io/schema/krakend.json",
+  "version": 3,
+  "port": 8080,
+  "endpoints": [],
+  "extra_config": {
+    "telemetry/logging": {
+      "level": "INFO",
+      "stdout": true
+    },
+    "telemetry/opentelemetry": {
+      "service_name": "krakend",
+      "metric_reporting_period": 15,
+      "exporters": {
+        "otlp": [
+          {
+            "name": "otel-collector",
+            "host": "otel-collector",
+            "port": 4317,
+            "use_http": false
+          }
+        ]
+      }
+    }
+  }
+}
